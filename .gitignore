@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+# scratch SQLite DBs produced by `make example`
+examples/*.db
+_personal/
