@@ -20,6 +20,16 @@ make example   # build the demo DB, then print a score report and a gate report
 make example-routing  # print a routing report, without and with catalog snapping
 ```
 
+Against a real warehouse instead of the demo SQLite file, see
+[`examples/bigquery_eval.py`](examples/bigquery_eval.py) — same comparator, gate
+and intervals, with `BigQueryExecutor` swapped in for `SQLiteExecutor`:
+
+```bash
+uv pip install -e '.[bigquery]'
+python examples/bigquery_eval.py --project my-project \
+    --predictions preds.csv --gate-only   # audit the golds before spending
+```
+
 ## What gets compared
 
 Not SQL text — SQL *results*. Both the predicted and the gold query run against a
