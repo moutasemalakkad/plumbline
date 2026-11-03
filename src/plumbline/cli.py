@@ -170,8 +170,48 @@ def format_routing_report(
     return "\n".join(lines)
 
 
+def _make_executor(args: argparse.Namespace):
+    """SQLite or BigQuery, whichever the caller selected.
+
+    The executor is the only part of the pipeline that knows where rows come
+    from; the comparator, gate, judge and intervals are identical either way.
+    BigQueryExecutor is imported here rather than at module scope so the
+    default SQLite path never needs the [bigquery] extra.
+    """
+    if getattr(args, "bq_project", None):
+        from .executor import BigQueryExecutor
+
+        return BigQueryExecutor(
+            project=args.bq_project,
+            location=args.bq_location,
+            maximum_bytes_billed=args.max_bytes,
+            row_cap=args.row_cap,
+        )
+    return SQLiteExecutor(args.db, row_cap=args.row_cap)
+
+
+def _add_executor_args(p: argparse.ArgumentParser) -> None:
+    """--db or --bq-project, exactly one, plus the BigQuery-only knobs."""
+    where = p.add_mutually_exclusive_group(required=True)
+    where.add_argument("--db", help="path to the SQLite database")
+    where.add_argument(
+        "--bq-project", help="run against BigQuery, billing to this project "
+                             "(needs the [bigquery] extra)"
+    )
+    p.add_argument("--bq-location", default=None, help="BigQuery dataset location")
+    p.add_argument(
+        "--max-bytes",
+        type=int,
+        default=1_000_000_000,
+        help="BigQuery per-query dry-run ceiling in bytes (default 1 GB). A "
+             "production fact table scans far more than a demo schema, so "
+             "raise this deliberately rather than removing the guard.",
+    )
+    p.add_argument("--row-cap", type=int, default=None, help="max rows per query")
+
+
 def _cmd_score(args: argparse.Namespace) -> int:
-    executor = SQLiteExecutor(args.db, row_cap=args.row_cap)
+    executor = _make_executor(args)
     predictions = _load_predictions(args.predictions)
     backend = None
     if args.judge_gemini:
@@ -199,7 +239,7 @@ def _cmd_score_routing(args: argparse.Namespace) -> int:
 
 
 def _cmd_gate(args: argparse.Namespace) -> int:
-    executor = SQLiteExecutor(args.db, row_cap=args.row_cap)
+    executor = _make_executor(args)
     golds = _load_golds(args.golds)
     findings = gate(golds, executor, check_stability=args.check_stability)
     print(format_gate_report(findings))
@@ -215,13 +255,12 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     score = sub.add_parser("score", help="grade predictions against gold SQL")
-    score.add_argument("--db", required=True, help="path to the SQLite database")
+    _add_executor_args(score)
     score.add_argument(
         "--predictions",
         required=True,
         help="CSV with columns id, question, gold_sql, pred_sql",
     )
-    score.add_argument("--row-cap", type=int, default=None, help="max rows per query")
     score.add_argument(
         "--confidence", type=float, default=0.95, help="CI confidence level"
     )
@@ -235,11 +274,10 @@ def _build_parser() -> argparse.ArgumentParser:
     score.set_defaults(func=_cmd_score)
 
     gate_p = sub.add_parser("gate", help="audit a gold set for defects")
-    gate_p.add_argument("--db", required=True, help="path to the SQLite database")
+    _add_executor_args(gate_p)
     gate_p.add_argument(
         "--golds", required=True, help="CSV with columns id, gold_sql"
     )
-    gate_p.add_argument("--row-cap", type=int, default=None, help="max rows per query")
     gate_p.add_argument(
         "--check-stability",
         action="store_true",

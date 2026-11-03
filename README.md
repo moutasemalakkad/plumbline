@@ -20,6 +20,20 @@ make example   # build the demo DB, then print a score report and a gate report
 make example-routing  # print a routing report, without and with catalog snapping
 ```
 
+Against a real warehouse, pass `--bq-project` instead of `--db`. Same
+comparator, gate and intervals; only the executor changes:
+
+```bash
+uv pip install -e '.[bigquery]'
+plumbline gate  --bq-project my-project --golds golds.csv        # audit first
+plumbline score --bq-project my-project --predictions preds.csv
+```
+
+Every query is dry-run against a byte ceiling (`--max-bytes`, 1 GB default)
+before it runs, and the cache is off so a rerun measures the engine rather than
+a cached answer. [`examples/bigquery_eval.py`](examples/bigquery_eval.py) shows
+the same thing through the Python API.
+
 ## What gets compared
 
 Not SQL text — SQL *results*. Both the predicted and the gold query run against a

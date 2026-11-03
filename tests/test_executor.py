@@ -97,3 +97,38 @@ def test_row_cap_not_hit_is_not_truncated(tmp_path):
 def test_exec_result_ok_reflects_error_field():
     assert ExecResult(rows=[]).ok is True
     assert ExecResult(error="boom").ok is False
+
+
+def test_cli_requires_exactly_one_backend():
+    """--db and --bq-project are mutually exclusive, and one is required.
+
+    Cheap guard on the CLI surface: BigQuery runs cost money and need
+    credentials, so the selection logic is what a fast test can cover.
+    """
+    import pytest
+
+    from plumbline.cli import _build_parser
+
+    parser = _build_parser()
+    with pytest.raises(SystemExit):  # neither
+        parser.parse_args(["gate", "--golds", "g.csv"])
+    with pytest.raises(SystemExit):  # both
+        parser.parse_args(["gate", "--golds", "g.csv", "--db", "a.db",
+                           "--bq-project", "p"])
+
+    args = parser.parse_args(["gate", "--golds", "g.csv", "--bq-project", "p"])
+    assert args.bq_project == "p" and args.db is None
+    assert args.max_bytes == 1_000_000_000  # guard on by default
+
+
+def test_make_executor_picks_sqlite_without_bq_project(tmp_path):
+    """No --bq-project means SQLite, and no [bigquery] extra is needed."""
+    from plumbline.cli import _build_parser, _make_executor
+    from plumbline.executor import SQLiteExecutor
+
+    db = tmp_path / "x.db"
+    db.touch()
+    args = _build_parser().parse_args(
+        ["gate", "--golds", "g.csv", "--db", str(db)]
+    )
+    assert isinstance(_make_executor(args), SQLiteExecutor)
